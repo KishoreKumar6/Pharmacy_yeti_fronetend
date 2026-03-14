@@ -1,19 +1,7 @@
-import SummaryCard from "../components/SummaryCard.jsx";
-
-const PurchaseSummary = ({ medicineSummary }) => (
+const PurchaseSummary = ({ medicineSummary, onDeliveryDateChange }) => (
   <section className="px-6 py-6">
     <h2 className="text-2xl font-bold text-slate-800">Purchase summary</h2>
-    {/* <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <SummaryCard label="Total units" value={totalUnits} />
-      <SummaryCard label="Tablet units" value={purchaseSummary.tablet} />
-      <SummaryCard label="Syrup units" value={purchaseSummary.syrup} />
-      <SummaryCard label="Capsule units" value={purchaseSummary.capsule} />
-    </div> */}
-
     <div className="mt-6">
-      {/* <h3 className="text-lg font-semibold text-slate-800">
-        Medicine-wise Summary
-      </h3> */}
       {medicineSummary.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">
           No confirmed renewals yet.
@@ -39,8 +27,7 @@ const PurchaseSummary = ({ medicineSummary }) => (
                     <tr className="bg-slate-50 text-left text-slate-600">
                       <th className="px-3 py-2 font-semibold">Customer</th>
                       <th className="px-3 py-2 font-semibold">Units</th>
-                      <th className="px-3 py-2 font-semibold">Extra</th>
-                      <th className="px-3 py-2 font-semibold">Final Units</th>
+                      <th className="px-3 py-2 font-semibold">Delivery Date</th>
                       <th className="px-3 py-2 font-semibold">Renewal Date</th>
                     </tr>
                   </thead>
@@ -50,9 +37,13 @@ const PurchaseSummary = ({ medicineSummary }) => (
                         <td className="px-3 py-2">{row.customerName}</td>
                         <td className="px-3 py-2">{row.totalUnits}</td>
                         <td className="px-3 py-2">
-                          {row.extraUnitsValue || 0}
+                          <input
+                            type="date"
+                            value={row.deliveryDate || ''}
+                            onChange={(event) => onDeliveryDateChange(row, event.target.value)}
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400"
+                          />
                         </td>
-                        <td className="px-3 py-2">{row.finalUnits}</td>
                         <td className="px-3 py-2">{row.renewalDate}</td>
                       </tr>
                     ))}

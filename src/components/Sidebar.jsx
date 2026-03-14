@@ -5,8 +5,10 @@ const Sidebar = ({ menuItems, activePage, onMenuClick }) => (
         K
       </div>
       <div>
-        <h1 className="text-xl font-bold text-blue-700">Kumaran Medical</h1>
-        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">and General Stores</p>
+        <h1 className="text-xl font-bold text-blue-700">Kumaran Medicals</h1>
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+          and General Stores
+        </p>
       </div>
     </div>
 
@@ -16,8 +18,8 @@ const Sidebar = ({ menuItems, activePage, onMenuClick }) => (
           key={item.key}
           className={`rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
             activePage === item.key
-              ? 'bg-blue-600 text-white shadow'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              ? "bg-blue-600 text-white shadow"
+              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
           }`}
           type="button"
           onClick={() => onMenuClick(item)}
@@ -32,11 +34,11 @@ const Sidebar = ({ menuItems, activePage, onMenuClick }) => (
         KM
       </div>
       <div>
-        <p className="text-sm font-semibold text-slate-800">Kumaran Medical</p>
+        <p className="text-sm font-semibold text-slate-800">Kumaran Medicals</p>
         <p className="text-xs text-slate-500">Administrator</p>
       </div>
     </div>
   </aside>
-)
+);
 
-export default Sidebar
+export default Sidebar;

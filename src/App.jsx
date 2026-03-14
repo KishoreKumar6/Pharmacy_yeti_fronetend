@@ -8,7 +8,7 @@ import ExistingCustomers from './pages/ExistingCustomers.jsx'
 import EditCustomer from './pages/EditCustomer.jsx'
 import TodaysRenewal from './pages/TodaysRenewal.jsx'
 import PurchaseSummary from './pages/PurchaseSummary.jsx'
-import { fetchCustomers } from './services/Serivce.jsx'
+import { fetchCustomers, updateCustomer } from './services/Serivce.jsx'
 import { getMedicationRows } from './utils/customer.js'
 
 const menuItems = [
@@ -25,8 +25,6 @@ function App() {
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [toasts, setToasts] = useState([])
   const [editingCustomer, setEditingCustomer] = useState(null)
-  const [renewalActionMap, setRenewalActionMap] = useState({})
-  const [extraUnitsMap, setExtraUnitsMap] = useState({})
 
   const showToast = useCallback((message, type = 'info') => {
     const id = `${Date.now()}-${Math.random()}`
@@ -77,13 +75,22 @@ function App() {
             customerName: customer.personalDetail?.name || 'N/A',
             medicineName: medRow?.medicineName || 'N/A',
             type: medRow?.type || 'tablet',
+            dosage: medRow?.dosage || 'full',
+            frequency: Array.isArray(medRow?.frequency) ? medRow.frequency : [],
+            frequencyCount: Array.isArray(medRow?.frequency) ? medRow.frequency.length : 0,
+            status: medRow?.status || 'hold',
+            rowIndex: index,
             days: medRow?.days ?? 'N/A',
             totalUnits: medRow?.totalUnits ?? 0,
+            deliveryDate: medRow?.deliveryDate
+              ? new Date(medRow.deliveryDate).toISOString().slice(0, 10)
+              : '',
             renewalDate: renewalDate.toLocaleDateString('en-IN', {
               day: '2-digit',
               month: 'short',
               year: 'numeric',
             }),
+            renewalDateRaw: renewalDate,
             daysUntil,
           }
         })
@@ -167,17 +174,30 @@ function App() {
     [purchaseSummary]
   )
 
+  const dueTodayCustomers = useMemo(() => {
+    const ids = new Set(renewalRows.filter((row) => row.daysUntil === 0).map((row) => row.customerId))
+    return ids.size
+  }, [renewalRows])
+
+  const overdueCustomers = useMemo(() => {
+    const ids = new Set(renewalRows.filter((row) => row.daysUntil < 0).map((row) => row.customerId))
+    return ids.size
+  }, [renewalRows])
+
+  const medicinesDueToday = useMemo(
+    () => renewalRows.filter((row) => row.daysUntil === 0).length,
+    [renewalRows]
+  )
+
   const confirmedRows = useMemo(
     () =>
       renewalRows
-        .filter((row) => renewalActionMap[row.key] === 'confirm')
+        .filter((row) => row.status === 'confirm')
         .map((row) => ({
           ...row,
-          extraUnits: extraUnitsMap[row.key] || '',
-          extraUnitsValue: Number(extraUnitsMap[row.key]) || 0,
-          finalUnits: Number(row.totalUnits || 0) + (Number(extraUnitsMap[row.key]) || 0),
+          finalUnits: Number(row.totalUnits || 0),
         })),
-    [renewalRows, renewalActionMap, extraUnitsMap]
+    [renewalRows]
   )
 
   const medicineSummary = useMemo(() => {
@@ -198,14 +218,47 @@ function App() {
     return Object.values(summary).sort((a, b) => a.medicineName.localeCompare(b.medicineName))
   }, [confirmedRows])
 
+  const updateRenewalRow = async (customerId, rowIndex, updates, toastMessage) => {
+    const customer = customers.find((item) => item._id === customerId)
+    if (!customer) return
+
+    const medicationDetails = getMedicationRows(customer).map((row, index) => {
+      if (index !== rowIndex) return row
+      return {
+        ...row,
+        ...updates,
+      }
+    })
+
+    const payload = {
+      personalDetail: customer.personalDetail,
+      medicationDetails: medicationDetails.map((row) => ({
+        medicineName: row.medicineName,
+        type: row.type,
+        frequency: row.frequency,
+        dosage: row.dosage,
+        status: row.status || 'hold',
+        deliveryDate: row.deliveryDate || null,
+        days: Number(row.days),
+      })),
+    }
+
+    try {
+      await updateCustomer(customerId, payload)
+      await loadCustomers(false)
+      if (toastMessage) {
+        showToast(toastMessage, 'success')
+      }
+    } catch (error) {
+      showToast(error.message || 'Failed to update renewal info', 'error')
+    }
+  }
+
   const overviewCards = [
     { title: 'Total Customers', value: customers.length },
-    { title: 'Todays Renewal', value: todaysRenewals.length },
-    { title: 'Total Units', value: totalUnits },
-    {
-      title: 'Last Added',
-      value: customers[0]?.personalDetail?.name || 'N/A',
-    },
+    { title: 'Due Today (Customers)', value: dueTodayCustomers },
+    { title: 'Overdue (Customers)', value: overdueCustomers },
+    { title: 'Medicines Due Today', value: medicinesDueToday },
   ]
 
   const handleMenuClick = (item) => {
@@ -257,19 +310,12 @@ function App() {
       return (
         <TodaysRenewal
           renewalSections={renewalSections}
-          actionMap={renewalActionMap}
-          onActionChange={(rowKey, action) =>
-            setRenewalActionMap((prev) => ({
-              ...prev,
-              [rowKey]: action,
-            }))
+          onActionChange={(row, action) =>
+            updateRenewalRow(row.customerId, row.rowIndex, { status: action }, `${action} saved`)
           }
-          extraUnitsMap={extraUnitsMap}
-          onExtraUnitChange={(rowKey, value) =>
-            setExtraUnitsMap((prev) => ({
-              ...prev,
-              [rowKey]: value,
-            }))
+          onDaysChange={(row, days) => updateRenewalRow(row.customerId, row.rowIndex, { days })}
+          onFrequencyChange={(row, frequency) =>
+            updateRenewalRow(row.customerId, row.rowIndex, { frequency })
           }
         />
       )
@@ -277,10 +323,17 @@ function App() {
     if (activePage === 'purchase-summary') {
       return (
         <PurchaseSummary
-          totalUnits={totalUnits}
-          purchaseSummary={purchaseSummary}
-          confirmedRows={confirmedRows}
           medicineSummary={medicineSummary}
+          onDeliveryDateChange={(row, deliveryDate) => {
+            const baseDate = deliveryDate ? new Date(deliveryDate) : null
+            if (!baseDate) return
+            const newRenewal = new Date(baseDate)
+            newRenewal.setDate(newRenewal.getDate() + Number(row.days))
+            updateRenewalRow(row.customerId, row.rowIndex, {
+              deliveryDate: baseDate,
+              renewalDate: newRenewal,
+            })
+          }}
         />
       )
     }

@@ -4,6 +4,7 @@ export const createMedicationRow = () => ({
   type: 'tablet',
   frequency: [],
   dosage: 'full',
+  status: 'hold',
   days: '',
   totalUnits: 0,
 })

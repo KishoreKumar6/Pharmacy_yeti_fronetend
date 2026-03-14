@@ -1,44 +1,57 @@
-import { useState } from 'react'
+import { useState } from "react";
 
 const badgeStyles = {
-  overdue: 'bg-red-100 text-red-700',
-  today: 'bg-emerald-100 text-emerald-700',
-  reminder: 'bg-amber-100 text-amber-700',
-  upcoming: 'bg-slate-100 text-slate-600',
-}
+  overdue: "bg-red-100 text-red-700",
+  today: "bg-emerald-100 text-emerald-700",
+  reminder: "bg-amber-100 text-amber-700",
+  upcoming: "bg-slate-100 text-slate-600",
+};
 
 const getStatus = (daysUntil) => {
-  if (daysUntil < 0) return { label: 'Overdue', tone: 'overdue' }
-  if (daysUntil === 0) return { label: 'Due Today', tone: 'today' }
-  if (daysUntil <= 2) return { label: `In ${daysUntil} day${daysUntil === 1 ? '' : 's'}`, tone: 'reminder' }
-  return { label: `In ${daysUntil} days`, tone: 'upcoming' }
-}
+  if (daysUntil < 0) return { label: "Overdue", tone: "overdue" };
+  if (daysUntil === 0) return { label: "Due Today", tone: "today" };
+  if (daysUntil <= 2)
+    return {
+      label: `In ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
+      tone: "reminder",
+    };
+  return { label: `In ${daysUntil} days`, tone: "upcoming" };
+};
 
 const actionBadgeStyles = {
-  hold: 'bg-amber-100 text-amber-700',
-  confirm: 'bg-emerald-100 text-emerald-700',
-  cancel: 'bg-red-100 text-red-700',
-}
+  hold: "bg-amber-100 text-amber-700",
+  confirm: "bg-emerald-100 text-emerald-700",
+  cancel: "bg-red-100 text-red-700",
+};
+
+const calculateTotalUnits = (days, frequencyCount, dosage) => {
+  const safeDays = Number(days) || 0;
+  const multiplier = dosage === "half" ? 0.5 : 1;
+  return safeDays * frequencyCount * multiplier;
+};
 
 const TodaysRenewal = ({
   renewalSections,
-  actionMap,
   onActionChange,
-  extraUnitsMap,
-  onExtraUnitChange,
+  onDaysChange,
+  onFrequencyChange,
 }) => {
-  const [openCustomerId, setOpenCustomerId] = useState(null)
+  const [openCustomerId, setOpenCustomerId] = useState(null);
+  const [dayOverrides, setDayOverrides] = useState({});
+  const [frequencyOverrides, setFrequencyOverrides] = useState({});
 
   const toggleCustomer = (customerId) => {
-    setOpenCustomerId((prev) => (prev === customerId ? null : customerId))
-  }
+    setOpenCustomerId((prev) => (prev === customerId ? null : customerId));
+  };
 
   const renderSection = (title, groups, accent) => (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <span className={`h-2 w-2 rounded-full ${accent}`} />
         <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
-        <span className="text-xs text-slate-500">{groups.length} customer(s)</span>
+        <span className="text-xs text-slate-500">
+          {groups.length} customer(s)
+        </span>
       </div>
 
       {groups.length === 0 ? (
@@ -46,20 +59,26 @@ const TodaysRenewal = ({
       ) : null}
 
       {groups.map((group) => (
-        <div key={group.customerId} className="rounded-2xl border border-slate-200 bg-white">
+        <div
+          key={group.customerId}
+          className="rounded-2xl border border-slate-200 bg-white"
+        >
           <button
             type="button"
             onClick={() => toggleCustomer(group.customerId)}
             className="flex w-full items-center justify-between px-5 py-4 text-left"
           >
             <div>
-              <p className="text-base font-semibold text-slate-800">{group.customerName}</p>
+              <p className="text-base font-semibold text-slate-800">
+                {group.customerName}
+              </p>
               <p className="mt-1 text-xs text-slate-500">
-                {group.items.length} medicine{group.items.length === 1 ? '' : 's'}
+                {group.items.length} medicine
+                {group.items.length === 1 ? "" : "s"}
               </p>
             </div>
             <span className="text-sm font-semibold text-blue-600">
-              {openCustomerId === group.customerId ? 'Hide' : 'View'}
+              {openCustomerId === group.customerId ? "Hide" : "View"}
             </span>
           </button>
 
@@ -72,17 +91,30 @@ const TodaysRenewal = ({
                       <th className="px-3 py-2 font-semibold">Medicine</th>
                       <th className="px-3 py-2 font-semibold">Type</th>
                       <th className="px-3 py-2 font-semibold">Days</th>
+                      <th className="px-3 py-2 font-semibold">Frequency</th>
                       <th className="px-3 py-2 font-semibold">Total Units</th>
                       <th className="px-3 py-2 font-semibold">Renewal Date</th>
-                      <th className="px-3 py-2 font-semibold">Extra Units</th>
                       <th className="px-3 py-2 font-semibold">Status</th>
                       <th className="px-3 py-2 font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {group.items.map((row) => {
-                      const status = getStatus(row.daysUntil)
-                      const action = actionMap[row.key]
+                      const status = getStatus(row.daysUntil);
+                      const action = row.status;
+                      const currentDays =
+                        dayOverrides[row.key] !== undefined
+                          ? dayOverrides[row.key]
+                          : row.days;
+                      const currentFrequencyCount =
+                        frequencyOverrides[row.key] !== undefined
+                          ? frequencyOverrides[row.key]
+                          : row.frequencyCount;
+                      const totalUnits = calculateTotalUnits(
+                        currentDays,
+                        currentFrequencyCount,
+                        row.dosage,
+                      );
                       return (
                         <tr key={row.key} className="border-t border-slate-100">
                           <td className="px-3 py-2">
@@ -98,43 +130,93 @@ const TodaysRenewal = ({
                             </div>
                           </td>
                           <td className="px-3 py-2 capitalize">{row.type}</td>
-                          <td className="px-3 py-2">{row.days}</td>
-                          <td className="px-3 py-2">{row.totalUnits}</td>
-                          <td className="px-3 py-2">{row.renewalDate}</td>
                           <td className="px-3 py-2">
                             <input
-                              type="text"
-                              value={extraUnitsMap[row.key] || ''}
-                              onChange={(event) => onExtraUnitChange(row.key, event.target.value)}
+                              type="number"
+                              min="1"
+                              value={currentDays}
+                              onChange={(event) =>
+                                setDayOverrides((prev) => ({
+                                  ...prev,
+                                  [row.key]: event.target.value,
+                                }))
+                              }
+                              onBlur={() => {
+                                if (currentDays !== row.days) {
+                                  onDaysChange(row, Number(currentDays));
+                                }
+                              }}
                               className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400"
-                              placeholder="0"
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles[status.tone]}`}>
+                            <input
+                              type="number"
+                              min="1"
+                              max="4"
+                              value={currentFrequencyCount}
+                              onChange={(event) =>
+                                setFrequencyOverrides((prev) => ({
+                                  ...prev,
+                                  [row.key]: Number(event.target.value),
+                                }))
+                              }
+                              onBlur={() => {
+                                const count = Number(currentFrequencyCount);
+                                if (!Number.isFinite(count) || count <= 0)
+                                  return;
+                                const clamped = Math.min(4, Math.max(1, count));
+                                if (clamped !== row.frequencyCount) {
+                                  const nextFrequency = Array.from({
+                                    length: clamped,
+                                  }).map(
+                                    (_, index) =>
+                                      [
+                                        "morning",
+                                        "afternoon",
+                                        "evening",
+                                        "night",
+                                      ][index],
+                                  );
+                                  onFrequencyChange(row, nextFrequency);
+                                }
+                              }}
+                              className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">{totalUnits}</td>
+                          <td className="px-3 py-2">{row.renewalDate}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles[status.tone]}`}
+                            >
                               {status.label}
                             </span>
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap gap-2">
-                              {['hold', 'confirm', 'cancel'].map((option) => (
+                              {["hold", "confirm", "cancel"].map((option) => (
                                 <button
                                   key={`${row.key}-${option}`}
                                   type="button"
-                                  onClick={() => onActionChange(row.key, option)}
+                                  onClick={() => onActionChange(row, option)}
                                   className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
                                     action === option
-                                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                      : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+                                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                                      : "border-slate-200 text-slate-700 hover:bg-slate-100"
                                   }`}
                                 >
-                                  {option}
+                                  {option === "hold"
+                                    ? "⏸"
+                                    : option === "cancel"
+                                      ? "❌"
+                                      : "▶"}
                                 </button>
                               ))}
                             </div>
                           </td>
                         </tr>
-                      )
+                      );
                     })}
                   </tbody>
                 </table>
@@ -144,11 +226,13 @@ const TodaysRenewal = ({
         </div>
       ))}
     </div>
-  )
+  );
 
   return (
     <section className="px-6 py-6">
-      <h2 className="text-2xl font-bold text-slate-800">Renewals & Reminders</h2>
+      <h2 className="text-2xl font-bold text-slate-800">
+        Renewals & Reminders
+      </h2>
       {renewalSections.overdue.length === 0 &&
       renewalSections.dueSoon.length === 0 &&
       renewalSections.dueLater.length === 0 ? (
@@ -158,13 +242,21 @@ const TodaysRenewal = ({
       renewalSections.dueSoon.length > 0 ||
       renewalSections.dueLater.length > 0 ? (
         <div className="mt-4 flex flex-col gap-8">
-          {renderSection('Overdue', renewalSections.overdue, 'bg-red-500')}
-          {renderSection('Due Soon (0-2 days)', renewalSections.dueSoon, 'bg-amber-500')}
-          {renderSection('Due Later (3+ days)', renewalSections.dueLater, 'bg-slate-400')}
+          {renderSection("Overdue", renewalSections.overdue, "bg-red-500")}
+          {renderSection(
+            "Due Soon (0-2 days)",
+            renewalSections.dueSoon,
+            "bg-amber-500",
+          )}
+          {renderSection(
+            "Due Later (3+ days)",
+            renewalSections.dueLater,
+            "bg-slate-400",
+          )}
         </div>
       ) : null}
     </section>
-  )
-}
+  );
+};
 
-export default TodaysRenewal
+export default TodaysRenewal;

@@ -33,6 +33,7 @@ const buildFormFromCustomer = (customer) => {
         type: row.type || 'tablet',
         frequency: row.frequency || [],
         dosage: row.dosage || 'full',
+        status: row.status || 'hold',
         days: row.days || '',
         totalUnits: row.totalUnits || 0,
       })) || [createMedicationRow()],
@@ -178,6 +179,7 @@ const EditCustomer = ({ customer, onCancel, onUpdated, showToast }) => {
         type: row.type,
         frequency: row.frequency,
         dosage: row.dosage,
+        status: row.status || 'hold',
         days: Number(row.days),
       })),
     }
