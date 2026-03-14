@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
-import './App.css'
-import { fetchCustomers, registerCustomer } from './services/Serivce.jsx'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Sidebar from './components/Sidebar.jsx'
+import Topbar from './components/Topbar.jsx'
+import ToastContainer from './components/ToastContainer.jsx'
+import Home from './pages/Home.jsx'
+import NewCustomer from './pages/NewCustomer.jsx'
+import ExistingCustomers from './pages/ExistingCustomers.jsx'
+import EditCustomer from './pages/EditCustomer.jsx'
+import TodaysRenewal from './pages/TodaysRenewal.jsx'
+import PurchaseSummary from './pages/PurchaseSummary.jsx'
+import { fetchCustomers } from './services/Serivce.jsx'
+import { getMedicationRows } from './utils/customer.js'
 
 const menuItems = [
   { key: 'home', label: 'Home' },
@@ -10,79 +19,23 @@ const menuItems = [
   { key: 'purchase-summary', label: 'Purchase summary' },
 ]
 
-const frequencyOptions = ['morning', 'afternoon', 'evening', 'night']
-
-const createMedicationRow = () => ({
-  id: `${Date.now()}-${Math.random()}`,
-  medicineName: '',
-  type: 'tablet',
-  frequency: [],
-  dosage: 'full',
-  days: '',
-  totalUnits: 0,
-})
-
-const initialForm = {
-  personalDetail: {
-    name: '',
-    age: '',
-    gender: 'male',
-    phoneNo: '',
-    address: '',
-  },
-  medicationDetails: [createMedicationRow()],
-}
-
-const formatDate = (value) => {
-  if (!value) return 'N/A'
-  return new Date(value).toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
-const isSameDay = (dateA, dateB) =>
-  dateA.getDate() === dateB.getDate() &&
-  dateA.getMonth() === dateB.getMonth() &&
-  dateA.getFullYear() === dateB.getFullYear()
-
-const getMedicationRows = (customer) => {
-  if (Array.isArray(customer?.medicationDetails) && customer.medicationDetails.length > 0) {
-    return customer.medicationDetails
-  }
-
-  if (customer?.medicationDetail) {
-    return [customer.medicationDetail]
-  }
-
-  return []
-}
-
-const calculateTotalUnits = (row) => {
-  const days = Number(row.days) || 0
-  const freqCount = Array.isArray(row.frequency) ? row.frequency.length : 0
-  const dosageMultiplier = row.dosage === 'half' ? 0.5 : 1
-
-  return days * freqCount * dosageMultiplier
-}
-
 function App() {
   const [activePage, setActivePage] = useState('home')
-  const [formData, setFormData] = useState(initialForm)
-  const [submitState, setSubmitState] = useState({ loading: false })
   const [customers, setCustomers] = useState([])
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [toasts, setToasts] = useState([])
+  const [editingCustomer, setEditingCustomer] = useState(null)
+  const [renewalActionMap, setRenewalActionMap] = useState({})
+  const [extraUnitsMap, setExtraUnitsMap] = useState({})
 
-  const showToast = (message, type = 'info') => {
+  const showToast = useCallback((message, type = 'info') => {
     const id = `${Date.now()}-${Math.random()}`
     setToasts((prev) => [...prev, { id, message, type }])
 
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((toast) => toast.id !== id))
     }, 3000)
-  }
+  }, [])
 
   const loadCustomers = async (showErrorToast = false) => {
     setLoadingCustomers(true)
@@ -103,23 +56,90 @@ function App() {
     loadCustomers(false)
   }, [])
 
-  const todaysRenewals = useMemo(() => {
+  const renewalRows = useMemo(() => {
     const today = new Date()
-    const rows = []
+    today.setHours(0, 0, 0, 0)
 
-    customers.forEach((customer) => {
-      getMedicationRows(customer).forEach((medRow) => {
-        const rowRenewalDate = medRow?.renewalDate || customer?.renewalDate
-        if (!rowRenewalDate) return
+    return customers
+      .flatMap((customer) =>
+        getMedicationRows(customer).map((medRow, index) => {
+          const rowRenewalDate = medRow?.renewalDate || customer?.renewalDate
+          if (!rowRenewalDate) return null
 
-        if (isSameDay(new Date(rowRenewalDate), today)) {
-          rows.push({ customer, medRow })
+          const renewalDate = new Date(rowRenewalDate)
+          renewalDate.setHours(0, 0, 0, 0)
+          const diffTime = renewalDate.getTime() - today.getTime()
+          const daysUntil = Math.round(diffTime / (1000 * 60 * 60 * 24))
+
+          return {
+            key: `${customer._id}-${index}`,
+            customerId: customer._id,
+            customerName: customer.personalDetail?.name || 'N/A',
+            medicineName: medRow?.medicineName || 'N/A',
+            type: medRow?.type || 'tablet',
+            days: medRow?.days ?? 'N/A',
+            totalUnits: medRow?.totalUnits ?? 0,
+            renewalDate: renewalDate.toLocaleDateString('en-IN', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            }),
+            daysUntil,
+          }
+        })
+      )
+      .filter(Boolean)
+      .sort((a, b) => a.daysUntil - b.daysUntil)
+  }, [customers])
+
+  const renewalGroups = useMemo(() => {
+    const grouped = renewalRows.reduce((acc, row) => {
+      const key = row.customerId
+      if (!acc[key]) {
+        acc[key] = {
+          customerId: row.customerId,
+          customerName: row.customerName,
+          items: [],
+          earliestDaysUntil: row.daysUntil,
         }
-      })
+      }
+      acc[key].items.push(row)
+      acc[key].earliestDaysUntil = Math.min(acc[key].earliestDaysUntil, row.daysUntil)
+      return acc
+    }, {})
+
+    return Object.values(grouped)
+      .map((group) => ({
+        ...group,
+        items: group.items.sort((a, b) => a.daysUntil - b.daysUntil),
+      }))
+      .sort((a, b) => a.earliestDaysUntil - b.earliestDaysUntil)
+  }, [renewalRows])
+
+  const renewalSections = useMemo(() => {
+    const sections = {
+      overdue: [],
+      dueSoon: [],
+      dueLater: [],
+    }
+
+    renewalGroups.forEach((group) => {
+      if (group.earliestDaysUntil < 0) {
+        sections.overdue.push(group)
+      } else if (group.earliestDaysUntil <= 2) {
+        sections.dueSoon.push(group)
+      } else {
+        sections.dueLater.push(group)
+      }
     })
 
-    return rows
-  }, [customers])
+    return sections
+  }, [renewalGroups])
+
+  const todaysRenewals = useMemo(
+    () => renewalRows.filter((row) => row.daysUntil === 0),
+    [renewalRows]
+  )
 
   const purchaseSummary = useMemo(() => {
     const totals = {
@@ -147,138 +167,36 @@ function App() {
     [purchaseSummary]
   )
 
-  const onPersonalChange = (field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      personalDetail: {
-        ...prev.personalDetail,
-        [field]: value,
-      },
-    }))
-  }
-
-  const onMedicationFieldChange = (rowId, field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      medicationDetails: prev.medicationDetails.map((row) => {
-        if (row.id !== rowId) return row
-
-        const updated = {
+  const confirmedRows = useMemo(
+    () =>
+      renewalRows
+        .filter((row) => renewalActionMap[row.key] === 'confirm')
+        .map((row) => ({
           ...row,
-          [field]: value,
+          extraUnits: extraUnitsMap[row.key] || '',
+          extraUnitsValue: Number(extraUnitsMap[row.key]) || 0,
+          finalUnits: Number(row.totalUnits || 0) + (Number(extraUnitsMap[row.key]) || 0),
+        })),
+    [renewalRows, renewalActionMap, extraUnitsMap]
+  )
+
+  const medicineSummary = useMemo(() => {
+    const summary = confirmedRows.reduce((acc, row) => {
+      const key = row.medicineName || 'N/A'
+      if (!acc[key]) {
+        acc[key] = {
+          medicineName: key,
+          totalUnits: 0,
+          rows: [],
         }
-
-        return {
-          ...updated,
-          totalUnits: calculateTotalUnits(updated),
-        }
-      }),
-    }))
-  }
-
-  const onFrequencyToggle = (rowId, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      medicationDetails: prev.medicationDetails.map((row) => {
-        if (row.id !== rowId) return row
-
-        const exists = row.frequency.includes(value)
-        const nextFrequency = exists
-          ? row.frequency.filter((item) => item !== value)
-          : [...row.frequency, value]
-
-        const updated = {
-          ...row,
-          frequency: nextFrequency,
-        }
-
-        return {
-          ...updated,
-          totalUnits: calculateTotalUnits(updated),
-        }
-      }),
-    }))
-  }
-
-  const addMedicationRow = () => {
-    setFormData((prev) => ({
-      ...prev,
-      medicationDetails: [...prev.medicationDetails, createMedicationRow()],
-    }))
-    showToast('New medicine row added', 'success')
-  }
-
-  const removeMedicationRow = (rowId) => {
-    setFormData((prev) => {
-      if (prev.medicationDetails.length === 1) {
-        return prev
       }
+      acc[key].totalUnits += row.finalUnits
+      acc[key].rows.push(row)
+      return acc
+    }, {})
 
-      return {
-        ...prev,
-        medicationDetails: prev.medicationDetails.filter((row) => row.id !== rowId),
-      }
-    })
-    showToast('Medicine row removed', 'info')
-  }
-
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-
-    const hasInvalidFrequency = formData.medicationDetails.some((row) => row.frequency.length === 0)
-    if (hasInvalidFrequency) {
-      showToast('Select at least one frequency in each medicine row', 'error')
-      return
-    }
-
-    const hasInvalidMedicine = formData.medicationDetails.some(
-      (row) => !row.medicineName.trim() || Number(row.days) <= 0
-    )
-
-    if (hasInvalidMedicine) {
-      showToast('Medicine name and days are required in all rows', 'error')
-      return
-    }
-
-    const payload = {
-      personalDetail: {
-        ...formData.personalDetail,
-        age: Number(formData.personalDetail.age),
-      },
-      medicationDetails: formData.medicationDetails.map((row) => ({
-        medicineName: row.medicineName,
-        type: row.type,
-        frequency: row.frequency,
-        dosage: row.dosage,
-        days: Number(row.days),
-      })),
-    }
-
-    try {
-      setSubmitState({ loading: true })
-      const response = await registerCustomer(payload)
-
-      showToast(response.message || 'Customer registered successfully', 'success')
-      setFormData({
-        personalDetail: {
-          name: '',
-          age: '',
-          gender: 'male',
-          phoneNo: '',
-          address: '',
-        },
-        medicationDetails: [createMedicationRow()],
-      })
-
-      await loadCustomers(false)
-      setActivePage('existing-customers')
-      showToast('Existing Customers page opened', 'info')
-    } catch (error) {
-      showToast(error.message || 'Failed to register customer', 'error')
-    } finally {
-      setSubmitState({ loading: false })
-    }
-  }
+    return Object.values(summary).sort((a, b) => a.medicineName.localeCompare(b.medicineName))
+  }, [confirmedRows])
 
   const overviewCards = [
     { title: 'Total Customers', value: customers.length },
@@ -290,341 +208,95 @@ function App() {
     },
   ]
 
-  const renderHome = () => (
-    <>
-      <section className="page-head">
-        <h2>Dashboard Overview</h2>
-        <p>Manage your medical store customers, renewals and purchase records.</p>
-      </section>
-
-      <section className="stats-grid">
-        {overviewCards.map((card) => (
-          <article key={card.title} className="stat-card">
-            <p className="stat-title">{card.title}</p>
-            <p className="stat-value">{card.value}</p>
-          </article>
-        ))}
-      </section>
-    </>
-  )
-
-  const renderNewCustomer = () => (
-    <section className="page-section">
-      <h2 className="section-title">New Customer Registration</h2>
-
-      <form className="customer-row-layout" onSubmit={handleSubmit}>
-        <div className="form-card">
-          <h3>Personal detail</h3>
-
-          <label>
-            Name
-            <input
-              required
-              type="text"
-              value={formData.personalDetail.name}
-              onChange={(event) => onPersonalChange('name', event.target.value)}
-            />
-          </label>
-
-          <div className="inline-two">
-            <label>
-              Age
-              <input
-                required
-                min="1"
-                type="number"
-                value={formData.personalDetail.age}
-                onChange={(event) => onPersonalChange('age', event.target.value)}
-              />
-            </label>
-
-            <label>
-              Gender
-              <select
-                value={formData.personalDetail.gender}
-                onChange={(event) => onPersonalChange('gender', event.target.value)}
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            PhoneNo
-            <input
-              required
-              type="text"
-              value={formData.personalDetail.phoneNo}
-              onChange={(event) => onPersonalChange('phoneNo', event.target.value)}
-            />
-          </label>
-
-          <label>
-            Address
-            <textarea
-              required
-              rows="3"
-              value={formData.personalDetail.address}
-              onChange={(event) => onPersonalChange('address', event.target.value)}
-            />
-          </label>
-        </div>
-
-        <div className="form-card">
-          <div className="card-head">
-            <h3>Medication detail</h3>
-            <button className="small-btn" type="button" onClick={addMedicationRow}>
-              Add Medicine
-            </button>
-          </div>
-
-          <div className="medicine-rows-wrap">
-            {formData.medicationDetails.map((row, index) => (
-              <div key={row.id} className="medicine-row">
-                <div className="medicine-row-head">
-                  <h4>Medicine Row {index + 1}</h4>
-                  {formData.medicationDetails.length > 1 ? (
-                    <button
-                      className="delete-row-btn"
-                      type="button"
-                      onClick={() => removeMedicationRow(row.id)}
-                    >
-                      x
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="medicine-grid">
-                  <label>
-                    Medicine name
-                    <input
-                      required
-                      type="text"
-                      value={row.medicineName}
-                      onChange={(event) =>
-                        onMedicationFieldChange(row.id, 'medicineName', event.target.value)
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Type
-                    <select
-                      value={row.type}
-                      onChange={(event) => onMedicationFieldChange(row.id, 'type', event.target.value)}
-                    >
-                      <option value="tablet">Tablet</option>
-                      <option value="syrup">Syrup</option>
-                      <option value="capsule">Capsule</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Dosage
-                    <select
-                      value={row.dosage}
-                      onChange={(event) => onMedicationFieldChange(row.id, 'dosage', event.target.value)}
-                    >
-                      <option value="full">Full</option>
-                      <option value="half">Half</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Days
-                    <input
-                      required
-                      min="1"
-                      type="number"
-                      value={row.days}
-                      onChange={(event) => onMedicationFieldChange(row.id, 'days', event.target.value)}
-                    />
-                  </label>
-
-                  <label>
-                    Total number of units
-                    <input readOnly type="text" value={row.totalUnits} />
-                  </label>
-                </div>
-
-                <div className="checkbox-group">
-                  <p>Frequency</p>
-                  <div className="checkbox-options">
-                    {frequencyOptions.map((option) => (
-                      <label key={`${row.id}-${option}`} className="checkbox-item">
-                        <input
-                          type="checkbox"
-                          checked={row.frequency.includes(option)}
-                          onChange={() => onFrequencyToggle(row.id, option)}
-                        />
-                        <span>{option}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="form-actions">
-          <button type="submit" disabled={submitState.loading}>
-            {submitState.loading ? 'Saving...' : 'Register Customer'}
-          </button>
-        </div>
-      </form>
-    </section>
-  )
-
-  const renderExistingCustomers = () => (
-    <section className="page-section">
-      <h2 className="section-title">Existing Customers</h2>
-      {loadingCustomers ? <p>Loading customers...</p> : null}
-      {!loadingCustomers && customers.length === 0 ? <p>No customers found.</p> : null}
-
-      {!loadingCustomers && customers.length > 0 ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Medicines</th>
-                <th>Total Units</th>
-                <th>Next Renewal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customers.map((customer) => {
-                const rows = getMedicationRows(customer)
-                const medicineNames = rows.map((row) => row.medicineName).join(', ')
-                const rowUnits = rows.reduce((acc, row) => acc + Number(row.totalUnits || 0), 0)
-
-                return (
-                  <tr key={customer._id}>
-                    <td>{customer.personalDetail?.name}</td>
-                    <td>{customer.personalDetail?.phoneNo}</td>
-                    <td>{medicineNames || 'N/A'}</td>
-                    <td>{rowUnits}</td>
-                    <td>{formatDate(customer.renewalDate)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-    </section>
-  )
-
-  const renderTodaysRenewal = () => (
-    <section className="page-section">
-      <h2 className="section-title">Todays renewal</h2>
-      {todaysRenewals.length === 0 ? <p>No renewals due today.</p> : null}
-      {todaysRenewals.length > 0 ? (
-        <ul className="renewal-list">
-          {todaysRenewals.map(({ customer, medRow }, index) => (
-            <li key={`${customer._id}-${index}`}>
-              <strong>{customer.personalDetail?.name}</strong> - {medRow?.medicineName} ({medRow?.totalUnits} units)
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  )
-
-  const renderPurchaseSummary = () => (
-    <section className="page-section">
-      <h2 className="section-title">Purchase summary</h2>
-      <div className="summary-grid">
-        <article className="summary-card">
-          <p>Total units</p>
-          <h3>{totalUnits}</h3>
-        </article>
-        <article className="summary-card">
-          <p>Tablet units</p>
-          <h3>{purchaseSummary.tablet}</h3>
-        </article>
-        <article className="summary-card">
-          <p>Syrup units</p>
-          <h3>{purchaseSummary.syrup}</h3>
-        </article>
-        <article className="summary-card">
-          <p>Capsule units</p>
-          <h3>{purchaseSummary.capsule}</h3>
-        </article>
-      </div>
-    </section>
-  )
-
-  const renderPage = () => {
-    if (activePage === 'new-customer') return renderNewCustomer()
-    if (activePage === 'existing-customers') return renderExistingCustomers()
-    if (activePage === 'todays-renewal') return renderTodaysRenewal()
-    if (activePage === 'purchase-summary') return renderPurchaseSummary()
-    return renderHome()
-  }
-
   const handleMenuClick = (item) => {
     setActivePage(item.key)
     showToast(`${item.label} page opened`, 'info')
   }
 
+  const handleEditCustomer = (customer) => {
+    setEditingCustomer(customer)
+    setActivePage('edit-customer')
+  }
+
+  const handleEditBack = () => {
+    setActivePage('existing-customers')
+  }
+
+  const handleCustomerCreated = async () => {
+    await loadCustomers(false)
+    setActivePage('existing-customers')
+    showToast('Existing Customers page opened', 'info')
+  }
+
+  const renderPage = () => {
+    if (activePage === 'new-customer') {
+      return <NewCustomer onCustomerCreated={handleCustomerCreated} showToast={showToast} />
+    }
+    if (activePage === 'existing-customers') {
+      return (
+        <ExistingCustomers
+          customers={customers}
+          loadingCustomers={loadingCustomers}
+          onRefresh={() => loadCustomers(true)}
+          onEditCustomer={handleEditCustomer}
+          showToast={showToast}
+        />
+      )
+    }
+    if (activePage === 'edit-customer') {
+      return (
+        <EditCustomer
+          customer={editingCustomer}
+          onCancel={handleEditBack}
+          onUpdated={handleCustomerCreated}
+          showToast={showToast}
+        />
+      )
+    }
+    if (activePage === 'todays-renewal') {
+      return (
+        <TodaysRenewal
+          renewalSections={renewalSections}
+          actionMap={renewalActionMap}
+          onActionChange={(rowKey, action) =>
+            setRenewalActionMap((prev) => ({
+              ...prev,
+              [rowKey]: action,
+            }))
+          }
+          extraUnitsMap={extraUnitsMap}
+          onExtraUnitChange={(rowKey, value) =>
+            setExtraUnitsMap((prev) => ({
+              ...prev,
+              [rowKey]: value,
+            }))
+          }
+        />
+      )
+    }
+    if (activePage === 'purchase-summary') {
+      return (
+        <PurchaseSummary
+          totalUnits={totalUnits}
+          purchaseSummary={purchaseSummary}
+          confirmedRows={confirmedRows}
+          medicineSummary={medicineSummary}
+        />
+      )
+    }
+    return <Home overviewCards={overviewCards} />
+  }
+
   return (
-    <div className="dashboard-layout">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-icon">K</div>
-          <div>
-            <h1 className="brand-title">Kumaran Medical</h1>
-            <p className="brand-subtitle">and General Stores</p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      <Sidebar menuItems={menuItems} activePage={activePage} onMenuClick={handleMenuClick} />
 
-        <nav className="menu-list" aria-label="Sidebar menu">
-          {menuItems.map((item) => (
-            <button
-              key={item.key}
-              className={`menu-item ${activePage === item.key ? 'active' : ''}`}
-              type="button"
-              onClick={() => handleMenuClick(item)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="profile-card">
-          <div className="avatar">KM</div>
-          <div>
-            <p className="profile-name">Kumaran Medical</p>
-            <p className="profile-role">Administrator</p>
-          </div>
-        </div>
-      </aside>
-
-      <main className="content-area">
-        <header className="topbar">
-          <input
-            className="search-input"
-            type="text"
-            placeholder="Search customers, medicines or invoices..."
-          />
-          <div className="admin-chip">Admin</div>
-        </header>
-
+      <main className="flex min-h-screen flex-col lg:ml-72">
+        <Topbar />
         {renderPage()}
       </main>
 
-      <div className="toast-container" role="status" aria-live="polite">
-        {toasts.map((toast) => (
-          <div key={toast.id} className={`toast ${toast.type}`}>
-            {toast.message}
-          </div>
-        ))}
-      </div>
+      <ToastContainer toasts={toasts} />
     </div>
   )
 }
