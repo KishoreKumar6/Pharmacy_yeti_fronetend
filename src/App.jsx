@@ -8,8 +8,10 @@ import ExistingCustomers from './pages/ExistingCustomers.jsx'
 import EditCustomer from './pages/EditCustomer.jsx'
 import TodaysRenewal from './pages/TodaysRenewal.jsx'
 import PurchaseSummary from './pages/PurchaseSummary.jsx'
-import { fetchCustomers, updateCustomer } from './services/Serivce.jsx'
+import Modal from './components/Modal.jsx'
+import { fetchCustomers, login, updateCustomer } from './services/Serivce.jsx'
 import { getMedicationRows } from './utils/customer.js'
+import { clearAuthToken, getAuthToken, setAuthToken } from './utils/api.js'
 
 const menuItems = [
   { key: 'home', label: 'Home' },
@@ -25,6 +27,10 @@ function App() {
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [toasts, setToasts] = useState([])
   const [editingCustomer, setEditingCustomer] = useState(null)
+  const [authRequired, setAuthRequired] = useState(!getAuthToken())
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [authForm, setAuthForm] = useState({ username: '', password: '' })
 
   const showToast = useCallback((message, type = 'info') => {
     const id = `${Date.now()}-${Math.random()}`
@@ -40,8 +46,13 @@ function App() {
     try {
       const data = await fetchCustomers()
       setCustomers(data)
-    } catch {
+    } catch (error) {
       setCustomers([])
+      if (error?.message === 'Unauthorized') {
+        clearAuthToken()
+        setAuthRequired(true)
+        return
+      }
       if (showErrorToast) {
         showToast('Unable to load customers', 'error')
       }
@@ -51,8 +62,10 @@ function App() {
   }
 
   useEffect(() => {
-    loadCustomers(false)
-  }, [])
+    if (!authRequired) {
+      loadCustomers(false)
+    }
+  }, [authRequired])
 
   const renewalRows = useMemo(() => {
     const today = new Date()
@@ -250,6 +263,11 @@ function App() {
         showToast(toastMessage, 'success')
       }
     } catch (error) {
+      if (error?.message === 'Unauthorized') {
+        clearAuthToken()
+        setAuthRequired(true)
+        return
+      }
       showToast(error.message || 'Failed to update renewal info', 'error')
     }
   }
@@ -264,6 +282,32 @@ function App() {
   const handleMenuClick = (item) => {
     setActivePage(item.key)
     showToast(`${item.label} page opened`, 'info')
+  }
+
+  const handleLogout = () => {
+    clearAuthToken()
+    setAuthRequired(true)
+    setAuthError('')
+    setAuthForm({ username: '', password: '' })
+  }
+
+  const handleAuthSubmit = async (event) => {
+    event.preventDefault()
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const result = await login(authForm)
+      if (!result?.token) {
+        throw new Error('Token missing in response')
+      }
+      setAuthToken(result.token)
+      setAuthRequired(false)
+      await loadCustomers(false)
+    } catch (error) {
+      setAuthError(error.message || 'Login failed')
+    } finally {
+      setAuthLoading(false)
+    }
   }
 
   const handleEditCustomer = (customer) => {
@@ -345,11 +389,52 @@ function App() {
       <Sidebar menuItems={menuItems} activePage={activePage} onMenuClick={handleMenuClick} />
 
       <main className="flex min-h-screen flex-col lg:ml-72">
-        <Topbar />
+        <Topbar isAuthenticated={!authRequired} onLogout={handleLogout} />
         {renderPage()}
       </main>
 
       <ToastContainer toasts={toasts} />
+
+      {authRequired ? (
+        <Modal title="Admin Login" onClose={() => {}}>
+          <form className="space-y-4" onSubmit={handleAuthSubmit}>
+            <div>
+              <label className="text-sm font-semibold text-slate-600">Username</label>
+              <input
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-blue-400"
+                type="text"
+                value={authForm.username}
+                onChange={(event) =>
+                  setAuthForm((prev) => ({ ...prev, username: event.target.value }))
+                }
+                placeholder="admin"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-600">Password</label>
+              <input
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-blue-400"
+                type="password"
+                value={authForm.password}
+                onChange={(event) =>
+                  setAuthForm((prev) => ({ ...prev, password: event.target.value }))
+                }
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            {authError ? <p className="text-sm text-red-500">{authError}</p> : null}
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+            >
+              {authLoading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+        </Modal>
+      ) : null}
     </div>
   )
 }
