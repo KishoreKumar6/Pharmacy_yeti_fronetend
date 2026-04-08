@@ -1,4 +1,4 @@
-name: Deploy Node Application
+name: Deploy Frontend Application
 
 on:
   push:
@@ -16,21 +16,20 @@ jobs:
         run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build Docker Image
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/pharmacy-backend:latest Pharmacy_yeti_Backend
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/pharmacy-frontend:latest .
 
       - name: Publish Image to Docker Hub
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/pharmacy-backend:latest
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/pharmacy-frontend:latest
 
   deploy:
     needs: build
     runs-on: self-hosted
     steps:
       - name: Pull Image from Docker Hub
-        run: docker pull ${{ secrets.DOCKER_USERNAME }}/pharmacy-backend:latest
+        run: docker pull ${{ secrets.DOCKER_USERNAME }}/pharmacy-frontend:latest
 
       - name: Run Docker Container
         run: |
-          docker rm -f pharmacy-backend || true
-          docker run -d -p 5000:5000 --name pharmacy-backend \
-            -e MONGODB_URI=${{ secrets.MONGODB_URI }} \
-            ${{ secrets.DOCKER_USERNAME }}/pharmacy-backend:latest
+          docker rm -f pharmacy-frontend || true
+          docker run -d -p 5173:80 --name pharmacy-frontend \
+            ${{ secrets.DOCKER_USERNAME }}/pharmacy-frontend:latest
