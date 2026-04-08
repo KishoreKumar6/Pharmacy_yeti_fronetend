@@ -5,7 +5,7 @@ const Sidebar = ({ menuItems, activePage, onMenuClick }) => (
         K
       </div>
       <div>
-        <h1 className="text-xl font-bold text-blue-700">Kumaran Medicalshop</h1>
+        <h1 className="text-xl font-bold text-blue-700">Kumaran Medicals</h1>
         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
           and General Stores
         </p>
